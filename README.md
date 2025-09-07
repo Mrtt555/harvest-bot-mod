@@ -214,6 +214,3 @@ Ce mod est conçu pour un usage personnel et éducatif. L'utilisation de bots pe
 ---
 
 **Bon farming ! 🌾**
-=======
-# harvest-bot-mod
-Bot de farming automatique pour Minecraft avec mouvements naturels, zigzag intelligent et HUD intégré. Mod Fabric pour récolte optimisée.
