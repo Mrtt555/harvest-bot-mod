@@ -1,0 +1,37 @@
+# Gradle files
+.gradle/
+build/
+!gradle-wrapper.jar
+gradle.properties
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Minecraft development
+run/
+logs/
+crash-reports/
+
+# Java
+*.class
+*.jar
+*.war
+*.ear
+*.logs
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~.nib
+
+# Claude files
+.claude/

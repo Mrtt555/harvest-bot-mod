@@ -1,0 +1,174 @@
+package Mrtt555;
+
+import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.minecraft.client.option.KeyBinding;
+import net.minecraft.client.util.InputUtil;
+import net.minecraft.text.Text;
+import org.lwjgl.glfw.GLFW;
+
+/**
+ * Initialisation côté client du mod
+ * Gère les keybindings configurables pour les rotations rapides
+ */
+public class PlayerApiClient implements ClientModInitializer {
+
+    // Keybindings configurables
+    private static KeyBinding quickTurn90Right;
+    private static KeyBinding quickTurn90Left;
+    private static KeyBinding quickTurn180;
+    private static KeyBinding stopRotation;
+
+    @Override
+    public void onInitializeClient() {
+        PlayerApiMod.LOGGER.info("Initializing Player API Client...");
+
+        // Enregistrer les keybindings
+        registerKeyBindings();
+
+        // Enregistrer les événements de tick pour gérer les keybindings
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            handleKeyBindings();
+        });
+
+        PlayerApiMod.LOGGER.info("Player API Client initialized successfully");
+    }
+
+    /**
+     * Enregistre tous les keybindings configurables
+     */
+    private void registerKeyBindings() {
+        // Rotation 90° à droite
+        quickTurn90Right = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.player-api-mod.quick_turn_90_right",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_RIGHT_BRACKET, // Touche ] par défaut
+                "category.player-api-mod"
+        ));
+
+        // Rotation 90° à gauche
+        quickTurn90Left = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.player-api-mod.quick_turn_90_left",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_LEFT_BRACKET, // Touche [ par défaut
+                "category.player-api-mod"
+        ));
+
+        // Rotation 180°
+        quickTurn180 = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.player-api-mod.quick_turn_180",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_BACKSLASH, // Touche \ par défaut
+                "category.player-api-mod"
+        ));
+
+        // Arrêter les rotations
+        stopRotation = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.player-api-mod.stop_rotation",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_SEMICOLON, // Touche ; par défaut
+                "category.player-api-mod"
+        ));
+
+        PlayerApiMod.LOGGER.info("Keybindings registered: ] (90° right), [ (90° left), \\ (180°), ; (stop)");
+    }
+
+    /**
+     * Gère les actions des keybindings
+     */
+    private void handleKeyBindings() {
+        // Rotation 90° droite
+        if (quickTurn90Right.wasPressed()) {
+            PlayerApiMod.LOGGER.info("Quick turn 90° right triggered by keybinding");
+            sendRotationRequest("90_right");
+        }
+
+        // Rotation 90° gauche
+        if (quickTurn90Left.wasPressed()) {
+            PlayerApiMod.LOGGER.info("Quick turn 90° left triggered by keybinding");
+            sendRotationRequest("90_left");
+        }
+
+        // Rotation 180°
+        if (quickTurn180.wasPressed()) {
+            PlayerApiMod.LOGGER.info("Quick turn 180° triggered by keybinding");
+            sendRotationRequest("180");
+        }
+
+        // Arrêter rotations
+        if (stopRotation.wasPressed()) {
+            PlayerApiMod.LOGGER.info("Stop rotation triggered by keybinding");
+            sendStopRotationRequest();
+        }
+    }
+
+    /**
+     * Envoie une requête de rotation rapide via HTTP
+     */
+    private void sendRotationRequest(String rotationType) {
+        new Thread(() -> {
+            try {
+                java.net.http.HttpClient httpClient = java.net.http.HttpClient.newHttpClient();
+                String jsonBody = "{\"type\": \"" + rotationType + "\"}";
+                
+                java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                        .uri(java.net.URI.create("http://localhost:8080/quick-turn"))
+                        .timeout(java.time.Duration.ofSeconds(2))
+                        .header("Content-Type", "application/json")
+                        .POST(java.net.http.HttpRequest.BodyPublishers.ofString(jsonBody))
+                        .build();
+
+                java.net.http.HttpResponse<String> response = httpClient.send(request, 
+                        java.net.http.HttpResponse.BodyHandlers.ofString());
+                
+                if (response.statusCode() == 200) {
+                    PlayerApiMod.LOGGER.info("Rotation {} completed successfully", rotationType);
+                } else {
+                    PlayerApiMod.LOGGER.warn("Rotation request failed with status: {} - {}", 
+                            response.statusCode(), response.body());
+                }
+
+            } catch (Exception e) {
+                PlayerApiMod.LOGGER.error("Error sending rotation request: {}", e.getMessage());
+            }
+        }).start();
+    }
+
+    /**
+     * Envoie une requête d'arrêt de rotation via HTTP
+     */
+    private void sendStopRotationRequest() {
+        new Thread(() -> {
+            try {
+                java.net.http.HttpClient httpClient = java.net.http.HttpClient.newHttpClient();
+                
+                java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                        .uri(java.net.URI.create("http://localhost:8080/stop-rotation"))
+                        .timeout(java.time.Duration.ofSeconds(2))
+                        .header("Content-Type", "application/json")
+                        .POST(java.net.http.HttpRequest.BodyPublishers.ofString("{}"))
+                        .build();
+
+                java.net.http.HttpResponse<String> response = httpClient.send(request, 
+                        java.net.http.HttpResponse.BodyHandlers.ofString());
+                
+                if (response.statusCode() == 200) {
+                    PlayerApiMod.LOGGER.info("Rotation stopped successfully");
+                } else {
+                    PlayerApiMod.LOGGER.warn("Stop rotation request failed with status: {} - {}", 
+                            response.statusCode(), response.body());
+                }
+
+            } catch (Exception e) {
+                PlayerApiMod.LOGGER.error("Error sending stop rotation request: {}", e.getMessage());
+            }
+        }).start();
+    }
+
+    // Getters statiques pour accéder aux keybindings depuis d'autres classes
+    public static KeyBinding getQuickTurn90RightBinding() { return quickTurn90Right; }
+    public static KeyBinding getQuickTurn90LeftBinding() { return quickTurn90Left; }
+    public static KeyBinding getQuickTurn180Binding() { return quickTurn180; }
+    public static KeyBinding getStopRotationBinding() { return stopRotation; }
+}

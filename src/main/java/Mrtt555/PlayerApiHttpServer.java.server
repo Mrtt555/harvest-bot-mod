@@ -1,0 +1,366 @@
+package Mrtt555;
+
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.util.math.Vec3d;
+
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.util.concurrent.Executors;
+
+public class PlayerApiHttpServer {
+    private com.sun.net.httpserver.HttpServer server;
+
+    public void start() throws IOException {
+        int port = 8080;
+        int maxAttempts = 10;
+        
+        for (int attempt = 0; attempt < maxAttempts; attempt++) {
+            try {
+                server = com.sun.net.httpserver.HttpServer.create(new InetSocketAddress(port), 0);
+                
+                // Endpoints existants
+                server.createContext("/playerdata", this::handlePlayerDataRequest);
+                
+                // Nouveaux endpoints pour les rotations
+                server.createContext("/rotate", this::handleRotateRequest);
+                server.createContext("/rotate-relative", this::handleRotateRelativeRequest);
+                server.createContext("/rotate-to-coords", this::handleRotateToCoordsRequest);
+                server.createContext("/quick-turn", this::handleQuickTurnRequest);
+                server.createContext("/stop-rotation", this::handleStopRotationRequest);
+                
+                server.setExecutor(Executors.newSingleThreadExecutor());
+                server.start();
+                PlayerApiMod.LOGGER.info("HTTP Server started successfully on port " + port);
+                return;
+            } catch (IOException e) {
+                PlayerApiMod.LOGGER.warn("Port " + port + " is already in use, trying port " + (port + 1));
+                port++;
+                if (attempt == maxAttempts - 1) {
+                    throw new IOException("Unable to start HTTP server after " + maxAttempts + " attempts", e);
+                }
+            }
+        }
+    }
+    
+    public void stop() {
+        if (server != null) {
+            server.stop(0);
+            PlayerApiMod.LOGGER.info("HTTP Server stopped");
+        }
+    }
+
+    // Gérer les requêtes de données du joueur (endpoint existant renommé)
+    private void handlePlayerDataRequest(HttpExchange exchange) throws IOException {
+        String response = getPlayerData();
+        sendJsonResponse(exchange, response, 200);
+    }
+
+    private String getPlayerData() {
+        try {
+            // Obtenir l'instance du serveur Minecraft
+            MinecraftServer mcServer = PlayerApiMod.SERVER_INSTANCE;
+            
+            // Vérifier si le serveur est disponible
+            if (mcServer == null) {
+                return "{\"error\": \"Server not available\", \"status\": \"server_unavailable\"}";
+            }
+            
+            // Vérifier si des joueurs sont connectés
+            if (mcServer.getPlayerManager().getPlayerList().isEmpty()) {
+                return "{\"error\": \"No players connected\", \"status\": \"no_players\", \"player_count\": 0}";
+            }
+
+            // Obtenir le premier joueur connecté
+            ServerPlayerEntity player = mcServer.getPlayerManager().getPlayerList().get(0);
+            
+            // Vérifier si le joueur est valide
+            if (player == null) {
+                return "{\"error\": \"Player data unavailable\", \"status\": \"invalid_player\"}";
+            }
+            
+            Vec3d pos = player.getPos();
+            float yaw = player.getYaw();
+            float pitch = player.getPitch();
+            String username = player.getName().getString();
+            int playerCount = mcServer.getPlayerManager().getPlayerList().size();
+
+            // Construire la réponse JSON avec plus d'informations
+            return String.format(
+                "{\"x\": %.2f, \"y\": %.2f, \"z\": %.2f, \"yaw\": %.2f, \"pitch\": %.2f, \"username\": \"%s\", \"player_count\": %d, \"status\": \"success\"}",
+                pos.x, pos.y, pos.z, yaw, pitch, username, playerCount
+            );
+            
+        } catch (Exception e) {
+            PlayerApiMod.LOGGER.error("Error getting player data: ", e);
+            return "{\"error\": \"Internal server error\", \"status\": \"exception\", \"message\": \"" + e.getMessage().replace("\"", "\\\"")+"\"}";
+        }
+    }
+
+    // --- Nouveaux handlers pour les rotations ---
+
+    /**
+     * POST /rotate
+     * Body: {"yaw": float, "smooth": boolean}
+     */
+    private void handleRotateRequest(HttpExchange exchange) throws IOException {
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendJsonResponse(exchange, "{\"error\": \"Method not allowed\", \"status\": \"method_not_allowed\"}", 405);
+            return;
+        }
+
+        try {
+            String requestBody = readRequestBody(exchange);
+            
+            // Parse simple du JSON (sans librairie externe)
+            float yaw = parseFloatFromJson(requestBody, "yaw");
+            boolean smooth = parseBooleanFromJson(requestBody, "smooth", true); // défaut: true
+
+            ServerPlayerEntity player = getFirstPlayer();
+            if (player == null) {
+                sendJsonResponse(exchange, "{\"error\": \"No player found\", \"status\": \"no_player\"}", 400);
+                return;
+            }
+
+            boolean success = PlayerControlManager.rotateToAngle(player, yaw, smooth);
+            String response = success ? 
+                "{\"status\": \"success\", \"message\": \"Rotation initiated\", \"target_yaw\": " + yaw + "}" :
+                "{\"error\": \"Failed to initiate rotation\", \"status\": \"rotation_failed\"}";
+            
+            sendJsonResponse(exchange, response, success ? 200 : 500);
+
+        } catch (Exception e) {
+            PlayerApiMod.LOGGER.error("Error in rotate endpoint: ", e);
+            sendJsonResponse(exchange, "{\"error\": \"Parse error\", \"status\": \"parse_error\"}", 400);
+        }
+    }
+
+    /**
+     * POST /rotate-relative
+     * Body: {"degrees": float, "smooth": boolean}
+     */
+    private void handleRotateRelativeRequest(HttpExchange exchange) throws IOException {
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendJsonResponse(exchange, "{\"error\": \"Method not allowed\", \"status\": \"method_not_allowed\"}", 405);
+            return;
+        }
+
+        try {
+            String requestBody = readRequestBody(exchange);
+            float degrees = parseFloatFromJson(requestBody, "degrees");
+            boolean smooth = parseBooleanFromJson(requestBody, "smooth", true);
+
+            ServerPlayerEntity player = getFirstPlayer();
+            if (player == null) {
+                sendJsonResponse(exchange, "{\"error\": \"No player found\", \"status\": \"no_player\"}", 400);
+                return;
+            }
+
+            boolean success = PlayerControlManager.rotateRelative(player, degrees, smooth);
+            String response = success ? 
+                "{\"status\": \"success\", \"message\": \"Relative rotation initiated\", \"degrees\": " + degrees + "}" :
+                "{\"error\": \"Failed to initiate rotation\", \"status\": \"rotation_failed\"}";
+            
+            sendJsonResponse(exchange, response, success ? 200 : 500);
+
+        } catch (Exception e) {
+            PlayerApiMod.LOGGER.error("Error in rotate-relative endpoint: ", e);
+            sendJsonResponse(exchange, "{\"error\": \"Parse error\", \"status\": \"parse_error\"}", 400);
+        }
+    }
+
+    /**
+     * POST /rotate-to-coords
+     * Body: {"x": float, "z": float, "smooth": boolean}
+     */
+    private void handleRotateToCoordsRequest(HttpExchange exchange) throws IOException {
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendJsonResponse(exchange, "{\"error\": \"Method not allowed\", \"status\": \"method_not_allowed\"}", 405);
+            return;
+        }
+
+        try {
+            String requestBody = readRequestBody(exchange);
+            float x = parseFloatFromJson(requestBody, "x");
+            float z = parseFloatFromJson(requestBody, "z");
+            boolean smooth = parseBooleanFromJson(requestBody, "smooth", true);
+
+            ServerPlayerEntity player = getFirstPlayer();
+            if (player == null) {
+                sendJsonResponse(exchange, "{\"error\": \"No player found\", \"status\": \"no_player\"}", 400);
+                return;
+            }
+
+            boolean success = PlayerControlManager.rotateToCoordinates(player, x, z, smooth);
+            String response = success ? 
+                String.format("{\"status\": \"success\", \"message\": \"Rotation to coordinates initiated\", \"target_x\": %.2f, \"target_z\": %.2f}", x, z) :
+                "{\"error\": \"Failed to initiate rotation\", \"status\": \"rotation_failed\"}";
+            
+            sendJsonResponse(exchange, response, success ? 200 : 500);
+
+        } catch (Exception e) {
+            PlayerApiMod.LOGGER.error("Error in rotate-to-coords endpoint: ", e);
+            sendJsonResponse(exchange, "{\"error\": \"Parse error\", \"status\": \"parse_error\"}", 400);
+        }
+    }
+
+    /**
+     * POST /quick-turn
+     * Body: {"type": "90_right" | "90_left" | "180"}
+     */
+    private void handleQuickTurnRequest(HttpExchange exchange) throws IOException {
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendJsonResponse(exchange, "{\"error\": \"Method not allowed\", \"status\": \"method_not_allowed\"}", 405);
+            return;
+        }
+
+        try {
+            String requestBody = readRequestBody(exchange);
+            String type = parseStringFromJson(requestBody, "type");
+
+            ServerPlayerEntity player = getFirstPlayer();
+            if (player == null) {
+                sendJsonResponse(exchange, "{\"error\": \"No player found\", \"status\": \"no_player\"}", 400);
+                return;
+            }
+
+            boolean success = false;
+            String message = "";
+
+            switch (type.toLowerCase()) {
+                case "90_right":
+                    success = PlayerControlManager.quickTurn90(player, true);
+                    message = "90° right turn";
+                    break;
+                case "90_left":
+                    success = PlayerControlManager.quickTurn90(player, false);
+                    message = "90° left turn";
+                    break;
+                case "180":
+                    success = PlayerControlManager.quickTurn180(player);
+                    message = "180° turn";
+                    break;
+                default:
+                    sendJsonResponse(exchange, "{\"error\": \"Invalid turn type\", \"status\": \"invalid_type\"}", 400);
+                    return;
+            }
+
+            String response = success ? 
+                "{\"status\": \"success\", \"message\": \"" + message + " completed\"}" :
+                "{\"error\": \"Failed to perform turn\", \"status\": \"turn_failed\"}";
+            
+            sendJsonResponse(exchange, response, success ? 200 : 500);
+
+        } catch (Exception e) {
+            PlayerApiMod.LOGGER.error("Error in quick-turn endpoint: ", e);
+            sendJsonResponse(exchange, "{\"error\": \"Parse error\", \"status\": \"parse_error\"}", 400);
+        }
+    }
+
+    /**
+     * POST /stop-rotation
+     */
+    private void handleStopRotationRequest(HttpExchange exchange) throws IOException {
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendJsonResponse(exchange, "{\"error\": \"Method not allowed\", \"status\": \"method_not_allowed\"}", 405);
+            return;
+        }
+
+        try {
+            ServerPlayerEntity player = getFirstPlayer();
+            if (player == null) {
+                sendJsonResponse(exchange, "{\"error\": \"No player found\", \"status\": \"no_player\"}", 400);
+                return;
+            }
+
+            PlayerControlManager.stopRotation(player);
+            sendJsonResponse(exchange, "{\"status\": \"success\", \"message\": \"Rotation stopped\"}", 200);
+
+        } catch (Exception e) {
+            PlayerApiMod.LOGGER.error("Error in stop-rotation endpoint: ", e);
+            sendJsonResponse(exchange, "{\"error\": \"Server error\", \"status\": \"server_error\"}", 500);
+        }
+    }
+
+    // --- Méthodes utilitaires ---
+
+    /**
+     * Envoie une réponse JSON
+     */
+    private void sendJsonResponse(HttpExchange exchange, String jsonResponse, int statusCode) throws IOException {
+        exchange.getResponseHeaders().set("Content-Type", "application/json");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+        exchange.sendResponseHeaders(statusCode, jsonResponse.length());
+        OutputStream os = exchange.getResponseBody();
+        os.write(jsonResponse.getBytes());
+        os.close();
+    }
+
+    /**
+     * Lit le corps de la requête
+     */
+    private String readRequestBody(HttpExchange exchange) throws IOException {
+        StringBuilder body = new StringBuilder();
+        try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                new java.io.InputStreamReader(exchange.getRequestBody()))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                body.append(line);
+            }
+        }
+        return body.toString();
+    }
+
+    /**
+     * Parse simple d'un float depuis JSON
+     */
+    private float parseFloatFromJson(String json, String key) {
+        String pattern = "\"" + key + "\"\\s*:\\s*([+-]?\\d*\\.?\\d+)";
+        java.util.regex.Pattern p = java.util.regex.Pattern.compile(pattern);
+        java.util.regex.Matcher m = p.matcher(json);
+        if (m.find()) {
+            return Float.parseFloat(m.group(1));
+        }
+        throw new IllegalArgumentException("Key '" + key + "' not found in JSON");
+    }
+
+    /**
+     * Parse simple d'un boolean depuis JSON
+     */
+    private boolean parseBooleanFromJson(String json, String key, boolean defaultValue) {
+        String pattern = "\"" + key + "\"\\s*:\\s*(true|false)";
+        java.util.regex.Pattern p = java.util.regex.Pattern.compile(pattern);
+        java.util.regex.Matcher m = p.matcher(json);
+        if (m.find()) {
+            return Boolean.parseBoolean(m.group(1));
+        }
+        return defaultValue;
+    }
+
+    /**
+     * Parse simple d'une string depuis JSON
+     */
+    private String parseStringFromJson(String json, String key) {
+        String pattern = "\"" + key + "\"\\s*:\\s*\"([^\"]+)\"";
+        java.util.regex.Pattern p = java.util.regex.Pattern.compile(pattern);
+        java.util.regex.Matcher m = p.matcher(json);
+        if (m.find()) {
+            return m.group(1);
+        }
+        throw new IllegalArgumentException("Key '" + key + "' not found in JSON");
+    }
+
+    /**
+     * Récupère le premier joueur connecté
+     */
+    private ServerPlayerEntity getFirstPlayer() {
+        MinecraftServer mcServer = PlayerApiMod.SERVER_INSTANCE;
+        if (mcServer == null || mcServer.getPlayerManager().getPlayerList().isEmpty()) {
+            return null;
+        }
+        return mcServer.getPlayerManager().getPlayerList().get(0);
+    }
+}

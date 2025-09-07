@@ -1,0 +1,15 @@
+{
+  "category.player-api-mod": "Player API Mod",
+  "category.player-api-mod.harvest": "Harvest Bot",
+  "key.player-api-mod.quick_turn_90_right": "Quick Turn 90° Right",
+  "key.player-api-mod.quick_turn_90_left": "Quick Turn 90° Left",
+  "key.player-api-mod.quick_turn_180": "Quick Turn 180°",
+  "key.player-api-mod.stop_rotation": "Stop Rotation",
+  "key.player-api-mod.start_bot": "Start Harvest Bot",
+  "key.player-api-mod.stop_bot": "Stop Harvest Bot",
+  "key.player-api-mod.set_corner": "Set Field Corner",
+  "key.player-api-mod.toggle_hud": "Toggle Bot HUD",
+  "key.player-api-mod.increase_delay": "Increase Drop Delay",
+  "key.player-api-mod.decrease_delay": "Decrease Drop Delay",
+  "key.player-api-mod.reset_state": "Reset Bot State"
+}

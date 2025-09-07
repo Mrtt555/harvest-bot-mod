@@ -1,0 +1,15 @@
+{
+  "category.player-api-mod": "Player API Mod",
+  "category.player-api-mod.harvest": "Bot de Récolte",
+  "key.player-api-mod.quick_turn_90_right": "Rotation Rapide 90° Droite",
+  "key.player-api-mod.quick_turn_90_left": "Rotation Rapide 90° Gauche",
+  "key.player-api-mod.quick_turn_180": "Rotation Rapide 180°",
+  "key.player-api-mod.stop_rotation": "Arrêter Rotation",
+  "key.player-api-mod.start_bot": "Démarrer Bot Récolte",
+  "key.player-api-mod.stop_bot": "Arrêter Bot Récolte",
+  "key.player-api-mod.set_corner": "Définir Coin Champ",
+  "key.player-api-mod.toggle_hud": "Afficher/Masquer HUD",
+  "key.player-api-mod.increase_delay": "Augmenter Délai Drop",
+  "key.player-api-mod.decrease_delay": "Diminuer Délai Drop",
+  "key.player-api-mod.reset_state": "Réinitialiser État Bot"
+}

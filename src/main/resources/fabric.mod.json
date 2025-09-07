@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "harvest-bot-mod",
+  "version": "${version}",
+  "name": "Harvest Bot",
+  "description": "Bot de farming automatique avec mouvements naturels, zigzag intelligent et récolte optimisée",
+  "authors": [
+    "Mrtt555"
+  ],
+  "contact": {
+    "homepage": "https://github.com/Mrtt555/harvest-bot-mod",
+    "sources": "https://github.com/Mrtt555/harvest-bot-mod"
+  },
+  "license": "MIT",
+  "icon": "assets/harvest-bot-mod/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "Mrtt555.HarvestBotKeybindings"
+    ]
+  },
+  "mixins": [],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric-api": "*",
+    "minecraft": "~${minecraft_version}",
+    "java": ">=17"
+  },
+  "suggests": {
+    "another-mod": "*"
+  }
+}

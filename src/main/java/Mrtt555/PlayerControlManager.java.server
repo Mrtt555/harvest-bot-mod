@@ -1,0 +1,242 @@
+package Mrtt555;
+
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.network.packet.s2c.play.PlayerPositionLookS2CPacket;
+import net.minecraft.util.math.MathHelper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * Gestionnaire de contrôle précis du joueur
+ * Permet des rotations fluides et précises côté serveur
+ */
+public class PlayerControlManager {
+    private static final Logger LOGGER = LoggerFactory.getLogger("PlayerControlManager");
+    
+    // Suivre les rotations en cours pour éviter les conflits
+    private static final Set<String> playersRotating = ConcurrentHashMap.newKeySet();
+    
+    /**
+     * Fait tourner le joueur vers un angle absolu (yaw) de manière fluide
+     * @param player Le joueur à faire tourner
+     * @param targetYaw L'angle cible en degrés (-180 à 180)
+     * @param smooth Si true, rotation fluide; si false, rotation instantanée
+     * @return true si la rotation a été initiée avec succès
+     */
+    public static boolean rotateToAngle(ServerPlayerEntity player, float targetYaw, boolean smooth) {
+        if (player == null) {
+            LOGGER.warn("Cannot rotate: player is null");
+            return false;
+        }
+        
+        String playerId = player.getUuidAsString();
+        
+        if (playersRotating.contains(playerId)) {
+            LOGGER.debug("Player {} is already rotating, skipping", player.getName().getString());
+            return false;
+        }
+        
+        try {
+            // Normaliser l'angle cible
+            targetYaw = MathHelper.wrapDegrees(targetYaw);
+            
+            if (smooth) {
+                // Rotation fluide en thread séparé
+                playersRotating.add(playerId);
+                final float finalTargetYaw = targetYaw;
+                final String finalPlayerId = playerId;
+                new Thread(() -> performSmoothRotation(player, finalTargetYaw, finalPlayerId)).start();
+            } else {
+                // Rotation instantanée
+                performInstantRotation(player, targetYaw);
+            }
+            
+            LOGGER.info("Rotating player {} to yaw: {}", player.getName().getString(), targetYaw);
+            return true;
+            
+        } catch (Exception e) {
+            LOGGER.error("Error during rotation for player {}: {}", player.getName().getString(), e.getMessage());
+            playersRotating.remove(playerId);
+            return false;
+        }
+    }
+    
+    /**
+     * Fait tourner le joueur de X degrés relativement à sa position actuelle
+     * @param player Le joueur à faire tourner
+     * @param relativeDegrees L'angle relatif en degrés (positif = droite, négatif = gauche)
+     * @param smooth Si true, rotation fluide; si false, rotation instantanée
+     * @return true si la rotation a été initiée avec succès
+     */
+    public static boolean rotateRelative(ServerPlayerEntity player, float relativeDegrees, boolean smooth) {
+        if (player == null) {
+            LOGGER.warn("Cannot rotate: player is null");
+            return false;
+        }
+        
+        float currentYaw = player.getYaw();
+        float targetYaw = MathHelper.wrapDegrees(currentYaw + relativeDegrees);
+        
+        return rotateToAngle(player, targetYaw, smooth);
+    }
+    
+    /**
+     * Fait tourner le joueur vers des coordonnées spécifiques
+     * @param player Le joueur à faire tourner
+     * @param targetX Coordonnée X cible
+     * @param targetZ Coordonnée Z cible
+     * @param smooth Si true, rotation fluide; si false, rotation instantanée
+     * @return true si la rotation a été initiée avec succès
+     */
+    public static boolean rotateToCoordinates(ServerPlayerEntity player, double targetX, double targetZ, boolean smooth) {
+        if (player == null) {
+            LOGGER.warn("Cannot rotate: player is null");
+            return false;
+        }
+        
+        double deltaX = targetX - player.getX();
+        double deltaZ = targetZ - player.getZ();
+        
+        // Calculer l'angle nécessaire pour regarder vers les coordonnées
+        float targetYaw = (float) Math.toDegrees(Math.atan2(-deltaX, deltaZ));
+        targetYaw = MathHelper.wrapDegrees(targetYaw);
+        
+        LOGGER.debug("Rotating to coordinates ({}, {}) - calculated yaw: {}", targetX, targetZ, targetYaw);
+        return rotateToAngle(player, targetYaw, smooth);
+    }
+    
+    /**
+     * Rotation rapide de 90° (configurable)
+     * @param player Le joueur à faire tourner
+     * @param clockwise true pour sens horaire, false pour anti-horaire
+     * @return true si la rotation a été effectuée
+     */
+    public static boolean quickTurn90(ServerPlayerEntity player, boolean clockwise) {
+        if (player == null) {
+            LOGGER.warn("Cannot rotate: player is null");
+            return false;
+        }
+        
+        float rotation = clockwise ? 90.0f : -90.0f;
+        return rotateRelative(player, rotation, false); // Rotation instantanée pour les quick turns
+    }
+    
+    /**
+     * Rotation rapide de 180°
+     * @param player Le joueur à faire tourner
+     * @return true si la rotation a été effectuée
+     */
+    public static boolean quickTurn180(ServerPlayerEntity player) {
+        if (player == null) {
+            LOGGER.warn("Cannot rotate: player is null");
+            return false;
+        }
+        
+        return rotateRelative(player, 180.0f, false); // Rotation instantanée
+    }
+    
+    /**
+     * Effectue une rotation instantanée avec pitch fixé à 30°
+     */
+    private static void performInstantRotation(ServerPlayerEntity player, float targetYaw) {
+        try {
+            // Utiliser le système de téléportation de Minecraft pour changer l'orientation
+            // Pitch fixé à 30° pour regarder légèrement vers le bas (optimal pour farming)
+            player.networkHandler.requestTeleport(
+                player.getX(), 
+                player.getY(), 
+                player.getZ(), 
+                targetYaw, 
+                30.0f // Pitch fixé à 30°
+            );
+            
+            LOGGER.debug("Instant rotation completed for player {} to yaw: {}", player.getName().getString(), targetYaw);
+            
+        } catch (Exception e) {
+            LOGGER.error("Error during instant rotation: {}", e.getMessage());
+        }
+    }
+    
+    /**
+     * Effectue une rotation fluide en plusieurs étapes
+     */
+    private static void performSmoothRotation(ServerPlayerEntity player, float targetYaw, String playerId) {
+        try {
+            float currentYaw = player.getYaw();
+            float difference = MathHelper.wrapDegrees(targetYaw - currentYaw);
+            
+            // Configuration de la rotation fluide
+            int steps = Math.max(5, Math.abs((int) difference) / 10); // Plus l'angle est grand, plus il y a d'étapes
+            float stepSize = difference / steps;
+            int delayMs = Math.max(20, 200 / steps); // Délai adaptatif
+            
+            LOGGER.debug("Starting smooth rotation: {} steps, {} degrees per step, {} ms delay", 
+                        steps, stepSize, delayMs);
+            
+            for (int i = 0; i < steps && playersRotating.contains(playerId); i++) {
+                try {
+                    currentYaw = MathHelper.wrapDegrees(currentYaw + stepSize);
+                    
+                    // S'assurer que le joueur existe toujours
+                    if (player.isRemoved()) {
+                        LOGGER.warn("Player was removed during rotation");
+                        break;
+                    }
+                    
+                    player.networkHandler.requestTeleport(
+                        player.getX(), 
+                        player.getY(), 
+                        player.getZ(), 
+                        currentYaw, 
+                        30.0f // Pitch fixé à 30° aussi pour les rotations fluides
+                    );
+                    
+                    Thread.sleep(delayMs);
+                    
+                } catch (InterruptedException e) {
+                    LOGGER.debug("Smooth rotation interrupted for player {}", player.getName().getString());
+                    Thread.currentThread().interrupt();
+                    break;
+                } catch (Exception e) {
+                    LOGGER.error("Error during smooth rotation step: {}", e.getMessage());
+                    break;
+                }
+            }
+            
+            // Rotation finale pour s'assurer de la précision
+            if (playersRotating.contains(playerId) && !player.isRemoved()) {
+                performInstantRotation(player, targetYaw);
+            }
+            
+            LOGGER.debug("Smooth rotation completed for player {}", player.getName().getString());
+            
+        } catch (Exception e) {
+            LOGGER.error("Error during smooth rotation: {}", e.getMessage());
+        } finally {
+            playersRotating.remove(playerId);
+        }
+    }
+    
+    /**
+     * Arrête toutes les rotations en cours pour un joueur
+     * @param player Le joueur pour lequel arrêter les rotations
+     */
+    public static void stopRotation(ServerPlayerEntity player) {
+        if (player != null) {
+            playersRotating.remove(player.getUuidAsString());
+            LOGGER.info("Stopped rotation for player {}", player.getName().getString());
+        }
+    }
+    
+    /**
+     * Vérifie si un joueur est en cours de rotation
+     * @param player Le joueur à vérifier
+     * @return true si le joueur est en cours de rotation
+     */
+    public static boolean isRotating(ServerPlayerEntity player) {
+        return player != null && playersRotating.contains(player.getUuidAsString());
+    }
+}

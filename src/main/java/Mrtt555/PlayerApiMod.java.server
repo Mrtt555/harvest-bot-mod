@@ -1,0 +1,58 @@
+package Mrtt555;
+
+import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.minecraft.server.MinecraftServer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+public class PlayerApiMod implements ModInitializer {
+    public static final Logger LOGGER = LoggerFactory.getLogger("player-api-mod");
+    public static MinecraftServer SERVER_INSTANCE = null;
+    private static PlayerApiHttpServer httpServer = null;
+
+    @Override
+    public void onInitialize() {
+        LOGGER.info("Starting Player API Mod...");
+        
+        // Capturer l'instance du serveur quand il démarre (fonctionne pour serveur dédié et intégré)
+        ServerLifecycleEvents.SERVER_STARTED.register(server -> {
+            SERVER_INSTANCE = server;
+            LOGGER.info("Server instance captured successfully");
+            
+            // Vérifier si c'est un serveur intégré (single-player) ou dédié
+            if (server.isDedicated() || server.isSingleplayer()) {
+                // Démarrer le serveur HTTP une fois que l'instance Minecraft est disponible
+                if (httpServer == null) {
+                    try {
+                        httpServer = new PlayerApiHttpServer();
+                        httpServer.start();
+                        LOGGER.info("HTTP Server started successfully");
+                    } catch (Exception e) {
+                        LOGGER.error("Failed to start HTTP server: " + e.getMessage());
+                        LOGGER.error("The mod will continue to work without the HTTP API");
+                        httpServer = null; // S'assurer que httpServer reste null en cas d'erreur
+                    }
+                }
+            } else {
+                LOGGER.info("Server type not supported for HTTP API");
+            }
+        });
+        
+        // Arrêter le serveur HTTP quand le serveur Minecraft s'arrête
+        ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+            if (httpServer != null) {
+                try {
+                    httpServer.stop();
+                    httpServer = null;
+                    SERVER_INSTANCE = null;
+                    LOGGER.info("HTTP Server stopped successfully");
+                } catch (Exception e) {
+                    LOGGER.error("Error stopping HTTP server: " + e.getMessage());
+                    httpServer = null; // S'assurer que httpServer est réinitialisé même en cas d'erreur
+                    SERVER_INSTANCE = null;
+                }
+            }
+        });
+    }
+}
