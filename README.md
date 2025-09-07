@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # 🌾 Harvest Bot Mod - Bot de Farming Automatique pour Minecraft
 
 [![Fabric](https://img.shields.io/badge/Mod%20Loader-Fabric-blue)](https://fabricmc.net/)
@@ -218,4 +217,3 @@ Ce mod est conçu pour un usage personnel et éducatif. L'utilisation de bots pe
 =======
 # harvest-bot-mod
 Bot de farming automatique pour Minecraft avec mouvements naturels, zigzag intelligent et HUD intégré. Mod Fabric pour récolte optimisée.
->>>>>>> 932d68a472720dfa83b219a87d1c7f00317008d3
